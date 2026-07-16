@@ -328,7 +328,7 @@ function filesystem.write(path, data)
 	closeFile(fileHandle)
 end
 
-local eventManager, eventLogger, gui, trigger_anti_bruteforce, aa_state, active_aa_settings, final_angles, frame_flags, LocalPawn, entities_list, is_loading_config, delay_counter, target_delay_ticks
+local eventManager, eventLogger, gui, trigger_anti_bruteforce, aa_state, active_aa_settings, final_angles, frame_flags, LocalPawn, entities_list, enemies_list, teammates_list, is_loading_config, delay_counter, target_delay_ticks
 
 local suf = {
 	set = client.set_event_callback,
@@ -1756,7 +1756,7 @@ local function choose_best_quadrant(attacker, current_state, reason, max_weight)
 	return selected
 end
 
-LocalPawn, entities_list = {
+LocalPawn, entities_list, enemies_list, teammates_list = {
 	vulnerable = false,
 	side = 0,
 	duck_amount = 0,
@@ -1776,7 +1776,7 @@ LocalPawn, entities_list = {
 	predicted = {
 		velocity = 0
 	}
-}, {}
+}, {}, {}, {}
 
 
 local g_last_postpone_fire_time = 0
@@ -1884,58 +1884,45 @@ end
 local function can_damage_enemy()
 	local is_enemy_damageable = false
 	local is_enemy_obstructed = false
-	local local_player_velocity = vector(entity.get_prop(LocalPawn.self, "m_vecVelocity"))
+	local vx, vy, vz = entity.get_prop(LocalPawn.self, "m_vecVelocity")
 	local ticks_to_extrapolate = reference.misc.settings.maxshift.value - reference.rage.aimbot.dt_fl[1].value + 1
-	local eye_position = vector(client.eye_position())
-	local extrapolated_eye_position = vector(client.extrapolate(eye_position.x, eye_position.y, eye_position.z, local_player_velocity, ticks_to_extrapolate))
+	local eye_x, eye_y, eye_z = client.eye_position()
+	local ex, ey, ez = client.extrapolate(eye_x, eye_y, eye_z, {x=vx or 0, y=vy or 0, z=vz or 0}, ticks_to_extrapolate)
 
 	-- Check if our extrapolation went through a wall
-	local fraction, entindex = client.trace_line(LocalPawn.self, eye_position.x, eye_position.y, eye_position.z, extrapolated_eye_position.x, extrapolated_eye_position.y, extrapolated_eye_position.z)
+	local fraction, entindex = client.trace_line(LocalPawn.self, eye_x, eye_y, eye_z, ex, ey, ez)
 	if fraction < 1.0 then
-		extrapolated_eye_position = eye_position
+		ex, ey, ez = eye_x, eye_y, eye_z
 	end
 
-	for player_index = 1, #entities_list do
-		local current_player = entities_list[player_index]
+	for player_index = 1, #enemies_list do
+		local current_player = enemies_list[player_index]
 
-		if entity.is_enemy(current_player) then
-			if bit.band(entity.get_esp_data(current_player).flags or 0, bit.lshift(1, 11)) == 0 then
-				local head_hitbox_position = {
-					entity.hitbox_position(current_player, 0)
-				}
-				if head_hitbox_position[1] then
-					local enemy_velocity = vector(entity.get_prop(current_player, "m_vecVelocity"))
-					local extrapolated_head_position = {
-						client.extrapolate(head_hitbox_position[1], head_hitbox_position[2], head_hitbox_position[3], enemy_velocity, 4)
-					}
+		if bit.band(entity.get_esp_data(current_player).flags or 0, bit.lshift(1, 11)) == 0 then
+			local hx, hy, hz = entity.hitbox_position(current_player, 0)
+			if hx then
+				local evx, evy, evz = entity.get_prop(current_player, "m_vecVelocity")
+				local ehx, ehy, ehz = client.extrapolate(hx, hy, hz, {x=evx or 0, y=evy or 0, z=evz or 0}, 4)
 
-					-- Check if enemy head extrapolation went through a wall
-					local enemy_fraction = client.trace_line(current_player, head_hitbox_position[1], head_hitbox_position[2], head_hitbox_position[3], extrapolated_head_position[1], extrapolated_head_position[2], extrapolated_head_position[3])
-					if enemy_fraction < 1.0 then
-						extrapolated_head_position = head_hitbox_position
-					end
-					
-					-- 1. Trace from extrapolated eye position (for early prediction)
-					local trace_extrapolated = {
-						client.trace_bullet(LocalPawn.self, extrapolated_eye_position.x, extrapolated_eye_position.y, extrapolated_eye_position.z, extrapolated_head_position[1], extrapolated_head_position[2], extrapolated_head_position[3])
-					}
-					
-					-- 2. Trace from current eye position (for stability while in the open)
-					local trace_current = {
-						client.trace_bullet(LocalPawn.self, eye_position.x, eye_position.y, eye_position.z, head_hitbox_position[1], head_hitbox_position[2], head_hitbox_position[3])
-					}
-
-					local dmg_extrapolated = trace_extrapolated[2] or 0
-					local dmg_current = trace_current[2] or 0
-
-					if dmg_extrapolated > 0 or dmg_current > 0 then
-						is_enemy_damageable = true
-						break
-					end
+				-- Check if enemy head extrapolation went through a wall
+				local enemy_fraction = client.trace_line(current_player, hx, hy, hz, ehx, ehy, ehz)
+				if enemy_fraction < 1.0 then
+					ehx, ehy, ehz = hx, hy, hz
 				end
-			else
-				is_enemy_obstructed = true
+				
+				-- 1. Trace from extrapolated eye position (for early prediction)
+				local _, dmg_extrapolated = client.trace_bullet(LocalPawn.self, ex, ey, ez, ehx, ehy, ehz)
+				
+				-- 2. Trace from current eye position (for stability while in the open)
+				local _, dmg_current = client.trace_bullet(LocalPawn.self, eye_x, eye_y, eye_z, hx, hy, hz)
+
+				if (dmg_extrapolated or 0) > 0 or (dmg_current or 0) > 0 then
+					is_enemy_damageable = true
+					break
+				end
 			end
+		else
+			is_enemy_obstructed = true
 		end
 	end
 
@@ -1961,22 +1948,19 @@ local function get_closest_enemy()
 	end
 
 	local local_origin = vector(entity.get_origin(local_player))
-	local players = entity.get_players()
+	local players = entity.get_players(true)
+	if not players then return nil end
 	local closest_enemy = nil
 	local closest_dist = math.huge
-	local local_team = entity.get_prop(local_player, "m_iTeamNum")
 
 	for i = 1, #players do
 		local player = players[i]
-		if player ~= local_player and entity.is_alive(player) and not entity.is_dormant(player) then
-			local team = entity.get_prop(player, "m_iTeamNum")
-			if team ~= local_team then
-				local origin = vector(entity.get_origin(player))
-				local dist = math.sqrt3((local_origin - origin):unpack())
-				if dist < closest_dist then
-					closest_dist = dist
-					closest_enemy = player
-				end
+		if entity.is_alive(player) and not entity.is_dormant(player) then
+			local origin = vector(entity.get_origin(player))
+			local dist = math.sqrt3((local_origin - origin):unpack())
+			if dist < closest_dist then
+				closest_dist = dist
+				closest_enemy = player
 			end
 		end
 	end
@@ -2033,7 +2017,18 @@ local function update_local_player_render_state(event_data)
 	local cur_threat = client.current_threat()
 	LocalPawn.threat = LocalPawn.valid and (cur_threat ~= nil and cur_threat ~= 0 and cur_threat or get_closest_enemy()) or nil
 	LocalPawn.weapon = LocalPawn.valid and entity.get_player_weapon(LocalPawn.self) or nil
-	entities_list = entity.get_players()
+	entities_list = entity.get_players() or {}
+
+	enemies_list = {}
+	teammates_list = {}
+	for i = 1, #entities_list do
+		local p = entities_list[i]
+		if entity.is_enemy(p) then
+			enemies_list[#enemies_list + 1] = p
+		else
+			teammates_list[#teammates_list + 1] = p
+		end
+	end
 
 	if LocalPawn.valid then
 		LocalPawn.origin = vector(entity.get_origin(LocalPawn.self))
@@ -4244,15 +4239,12 @@ eventManager.bullet_impact:set(function(event_data)
 
 	local teammate_distances = {}
 
-	for i = 1, #entities_list do
-		local player_entity = entities_list[i]
+	for i = 1, #teammates_list do
+		local player_entity = teammates_list[i]
+		local teammate_hitbox_pos = vector(entity.hitbox_position(player_entity, 0))
+		local closest_point_on_ray = math.closest_ray_point(teammate_hitbox_pos, attacker_origin, impact_position)
 
-		if not entity.is_enemy(player_entity) then
-			local teammate_hitbox_pos = vector(entity.hitbox_position(player_entity, 0))
-			local closest_point_on_ray = math.closest_ray_point(teammate_hitbox_pos, attacker_origin, impact_position)
-
-			teammate_distances[player_entity == LocalPawn.self and 0 or #teammate_distances + 1] = teammate_hitbox_pos:dist(closest_point_on_ray)
-		end
+		teammate_distances[player_entity == LocalPawn.self and 0 or #teammate_distances + 1] = teammate_hitbox_pos:dist(closest_point_on_ray)
 	end
 
 	if teammate_distances[0] and (#teammate_distances == 0 or teammate_distances[0] < math.min(unpack(teammate_distances))) and teammate_distances[0] < 80 then
@@ -5757,17 +5749,16 @@ local main_aa_handler = {
 
 		if LocalPawn.valid and not last_peeking then
 			local peek_detected = false
-			local eye_pos = vector(client.eye_position())
-			local local_player_velocity = vector(entity.get_prop(LocalPawn.self, "m_vecVelocity"))
+			local eye_x, eye_y, eye_z = client.eye_position()
+			local vx, vy, vz = entity.get_prop(LocalPawn.self, "m_vecVelocity")
 			local ticks_to_extrapolate = reference.misc.settings.maxshift.value - reference.rage.aimbot.dt_fl[1].value + 1
 			
-			local lx, ly, lz = extrapolate_position_physics(LocalPawn.self, eye_pos.x, eye_pos.y, eye_pos.z, local_player_velocity.x, local_player_velocity.y, local_player_velocity.z, ticks_to_extrapolate)
-			local extrapolated_eye_pos = vector(lx, ly, lz)
+			local lx, ly, lz = extrapolate_position_physics(LocalPawn.self, eye_x, eye_y, eye_z, vx or 0, vy or 0, vz or 0, ticks_to_extrapolate)
 
-			for i = 1, #entities_list do
-				local player = entities_list[i]
-				if entity.is_enemy(player) and bit.band(entity.get_esp_data(player).flags or 0, bit.lshift(1, 11)) == 0 then
-					local enemy_velocity = vector(entity.get_prop(player, "m_vecVelocity"))
+			for i = 1, #enemies_list do
+				local player = enemies_list[i]
+				if bit.band(entity.get_esp_data(player).flags or 0, bit.lshift(1, 11)) == 0 then
+					local evx, evy, evz = entity.get_prop(player, "m_vecVelocity")
 					local sim_time = entity.get_prop(player, "m_flSimulationTime") or 0
 					local tickinterval = globals.tickinterval()
 					local choked_ticks = 0
@@ -5782,34 +5773,33 @@ local main_aa_handler = {
 
 					local enemy_extrap_ticks = 12
 					local hitboxes = { 0, 2, 3 }
-					for j = 1, #hitboxes do
-						local hb = { entity.hitbox_position(player, hitboxes[j]) }
-						if hb[1] then
-							local ex, ey, ez = extrapolate_position_physics(player, hb[1], hb[2], hb[3], enemy_velocity.x, enemy_velocity.y, enemy_velocity.z, enemy_extrap_ticks)
-							local extrapolated_hb = { ex, ey, ez }
+					for j = 1, 3 do
+						local hbx, hby, hbz = entity.hitbox_position(player, hitboxes[j])
+						if hbx then
+							local ehbx, ehby, ehbz = extrapolate_position_physics(player, hbx, hby, hbz, evx or 0, evy or 0, evz or 0, enemy_extrap_ticks)
 
-							local result_current = { client.trace_bullet(LocalPawn.self, eye_pos.x, eye_pos.y, eye_pos.z, hb[1], hb[2], hb[3]) }
-							if (result_current[2] or 0) > 0 then
+							local _, dmg_current = client.trace_bullet(LocalPawn.self, eye_x, eye_y, eye_z, hbx, hby, hbz)
+							if (dmg_current or 0) > 0 then
 								peek_detected = true
 								break
 							end
 
-							local result_extrapolated = { client.trace_bullet(LocalPawn.self, extrapolated_eye_pos.x, extrapolated_eye_pos.y, extrapolated_eye_pos.z, extrapolated_hb[1], extrapolated_hb[2], extrapolated_hb[3]) }
-							if (result_extrapolated[2] or 0) > 0 then
+							local _, dmg_extrap = client.trace_bullet(LocalPawn.self, lx, ly, lz, ehbx, ehby, ehbz)
+							if (dmg_extrap or 0) > 0 then
 								peek_detected = true
 								break
 							end
 
-							local our_head = { entity.hitbox_position(LocalPawn.self, 0) }
-							if our_head[1] then
-								local result_enemy = { client.trace_bullet(player, hb[1], hb[2], hb[3], our_head[1], our_head[2], our_head[3]) }
-								if (result_enemy[2] or 0) > 0 then
+							local ohx, ohy, ohz = entity.hitbox_position(LocalPawn.self, 0)
+							if ohx then
+								local _, dmg_enemy = client.trace_bullet(player, hbx, hby, hbz, ohx, ohy, ohz)
+								if (dmg_enemy or 0) > 0 then
 									peek_detected = true
 									break
 								end
 
-								local result_enemy_ext = { client.trace_bullet(player, extrapolated_hb[1], extrapolated_hb[2], extrapolated_hb[3], our_head[1], our_head[2], our_head[3]) }
-								if (result_enemy_ext[2] or 0) > 0 then
+								local _, dmg_enemy_ext = client.trace_bullet(player, ehbx, ehby, ehbz, ohx, ohy, ohz)
+								if (dmg_enemy_ext or 0) > 0 then
 									peek_detected = true
 									break
 								end
