@@ -7,7 +7,7 @@ local config = {
 	build = "stable",
 	version = "Recode",
 
-	level = 2 -- 1 = stable, 2 = bliss, 3 = debug DONT CHANGE VALUE IT CAN BRAKE YOUR CONFIG
+	level = 2 -- DONT CHANGE THIS VALUE IT CAN BRAKE YOUR CONFIG
 }
 
 config.user = config.isdebug and "admin" or ( panorama.open().MyPersonaAPI.GetName() or "user" )
@@ -286,7 +286,7 @@ local function sreference(arg, ...)
 	return success and result_or_error
 end
 
--- local config = {}
+
 
 local build_profiles = {
 	[1] = { "stable", "pasteria • stable"},
@@ -758,7 +758,7 @@ local render_module = (function()
 			end
 
 			alpha_stack[stack_size + 1] = alpha
-			-- current_alpha_multiplier = current_alpha_multiplier * alpha_stack[stack_size + 1] * (alpha_stack[stack_size] or 1)
+			
 			current_alpha_multiplier = current_alpha_multiplier * alpha
 		end,
 		pop_alpha = function()
@@ -1589,9 +1589,9 @@ local function get_wall_direction()
 	local right_fraction = client.trace_line(local_player, eye_x, eye_y, eye_z, right_x, right_y, eye_z)
 
 	if left_fraction < right_fraction then
-		return -1 -- Wall is closer to the left (prefer yaw <= 0 -> q3, q4)
+		return -1 
 	elseif right_fraction < left_fraction then
-		return 1  -- Wall is closer to the right (prefer yaw >= 0 -> q1, q2)
+		return 1  
 	end
 	return 0
 end
@@ -1662,20 +1662,20 @@ local function choose_best_quadrant(attacker, current_state, reason, max_weight)
 		profile = ab_history["_global_shared"][current_state] or ab_history["_global_shared"].default
 	end
 
-	-- Wall-Aware AB adjustments
+	
 	local wall_side = get_wall_direction()
-	local wall_bonus = 2.0 -- virtual score bonus for hiding head behind wall
+	local wall_bonus = 2.0 
 
-	-- On peek alternating delta mode (low vs high)
+	
 	local low_delta_bonus = 0
 	local high_delta_bonus = 0
 	if reason == "On peek" then
 		if player_history then
 			player_history.peek_toggle = not player_history.peek_toggle
 			if player_history.peek_toggle then
-				low_delta_bonus = 3.0  -- Prioritize q2 & q4 (low delta desync)
+				low_delta_bonus = 3.0  
 			else
-				high_delta_bonus = 3.0 -- Prioritize q1 & q3 (high delta desync)
+				high_delta_bonus = 3.0 
 			end
 		end
 	end
@@ -1685,7 +1685,7 @@ local function choose_best_quadrant(attacker, current_state, reason, max_weight)
 	local q3_score = profile.q3 + (wall_side == -1 and wall_bonus or 0) + high_delta_bonus
 	local q4_score = profile.q4 + (wall_side == -1 and wall_bonus or 0) + low_delta_bonus
 
-	-- Dynamic trigger rotation (Anti-resolver cycle)
+	
 	if gui.antiaim.ab.cycle:get() and player_history and player_history.recent_quads then
 		local num_recent = #player_history.recent_quads
 		for i = 1, num_recent do
@@ -1719,13 +1719,13 @@ local function choose_best_quadrant(attacker, current_state, reason, max_weight)
 			
 			table.insert(dist_logs, string.format("%s(%.1fu)", q, dist))
 
-			-- Overlap penalty (CS:GO head hitbox diameter ~11.0 units)
+			
 			local penalty = 0
 			if dist < 11.0 then
 				penalty = -15 * (1 - dist / 11.0)
 			end
 			
-			-- Distance bonus (proportional to displacement to prioritize furthest position)
+			
 			local bonus = dist * 1.0
 			
 			return penalty + bonus
@@ -1800,7 +1800,7 @@ eventManager.predict_command:set(function(cmd)
 	if current_tickbase > g_max_tickbase_seen then
 		g_max_tickbase_seen = current_tickbase
 	elseif current_tickbase < g_max_tickbase_seen then
-		-- block empty
+		
 	end
 
 	LocalPawn.exploit.lc_left = math.min(14, math.max(0, g_max_tickbase_seen - current_tickbase - 1))
@@ -1889,7 +1889,7 @@ local function can_damage_enemy()
 	local eye_x, eye_y, eye_z = client.eye_position()
 	local ex, ey, ez = client.extrapolate(eye_x, eye_y, eye_z, {x=vx or 0, y=vy or 0, z=vz or 0}, ticks_to_extrapolate)
 
-	-- Check if our extrapolation went through a wall
+	
 	local fraction, entindex = client.trace_line(LocalPawn.self, eye_x, eye_y, eye_z, ex, ey, ez)
 	if fraction < 1.0 then
 		ex, ey, ez = eye_x, eye_y, eye_z
@@ -1897,23 +1897,24 @@ local function can_damage_enemy()
 
 	for player_index = 1, #enemies_list do
 		local current_player = enemies_list[player_index]
+		local esp_data = entity.get_esp_data(current_player)
 
-		if bit.band(entity.get_esp_data(current_player).flags or 0, bit.lshift(1, 11)) == 0 then
+		if esp_data and bit.band(esp_data.flags or 0, bit.lshift(1, 11)) == 0 then
 			local hx, hy, hz = entity.hitbox_position(current_player, 0)
 			if hx then
 				local evx, evy, evz = entity.get_prop(current_player, "m_vecVelocity")
 				local ehx, ehy, ehz = client.extrapolate(hx, hy, hz, {x=evx or 0, y=evy or 0, z=evz or 0}, 4)
 
-				-- Check if enemy head extrapolation went through a wall
+				
 				local enemy_fraction = client.trace_line(current_player, hx, hy, hz, ehx, ehy, ehz)
 				if enemy_fraction < 1.0 then
 					ehx, ehy, ehz = hx, hy, hz
 				end
 				
-				-- 1. Trace from extrapolated eye position (for early prediction)
+				
 				local _, dmg_extrapolated = client.trace_bullet(LocalPawn.self, ex, ey, ez, ehx, ehy, ehz)
 				
-				-- 2. Trace from current eye position (for stability while in the open)
+				
 				local _, dmg_current = client.trace_bullet(LocalPawn.self, eye_x, eye_y, eye_z, hx, hy, hz)
 
 				if (dmg_extrapolated or 0) > 0 or (dmg_current or 0) > 0 then
@@ -2417,7 +2418,7 @@ gui = {
 			local auto_force_body_miss = ui_groups.angles:slider("Force body aim Missed Trigger AUTO", 1, 10, 2, true, "sh")
 			local auto_ping_spike_value = ui_groups.angles:slider("Ping spike value AUTO", 1, 200, 105, true, "ms")
 
-			-- Set up dependencies manually
+			
 			ssg_select:depend({weapon, "SSG-08"})
 			ssg_force_safe:depend({weapon, "SSG-08"}, {ssg_select, "Force safe point"})
 			ssg_force_safe_hp:depend({weapon, "SSG-08"}, {ssg_select, "Force safe point"}, {ssg_force_safe, "Enemy HP < X"})
@@ -3759,7 +3760,7 @@ eventManager.paint_ui:set(function()
 	was_in_game_last_frame = is_in_game_now
 end)
 
-local function StatisticUpd(arg) -- 1 - evaded, 2 - killed, 3 - shots, 4 - missed
+local function StatisticUpd(arg) 
 	if arg == 1 then
 		val_storage_evaded = storage.stats.evaded
 		storage.stats.evaded = ( val_storage_evaded + 1 )
@@ -4301,7 +4302,7 @@ local aa_logic_modules = {
 				end
 
 				if button_config.active == is_active then
-					-- block empty
+					
 				else
 					button_config.active = is_active
 
@@ -5574,8 +5575,8 @@ local function handle_aa_delay(delay_settings)
 						target_delay_ticks = target_delay_ticks + freeze_add
 					end
 				end
-			else -- synced
-				if not aa_state.switch then -- Left side
+			else 
+				if not aa_state.switch then 
 					local left_mode = string.lower(delay_settings.left_mode or "static")
 					local left_value = delay_settings.left_value or 0
 					if left_mode == "fluctuate" then
@@ -5634,7 +5635,7 @@ local function handle_aa_delay(delay_settings)
 							target_delay_ticks = target_delay_ticks + freeze_add
 						end
 					end
-				else -- Right side
+				else 
 					local right_mode = string.lower(delay_settings.right_mode or "static")
 					local right_value = delay_settings.right_value or 0
 					if right_mode == "fluctuate" then
@@ -5757,7 +5758,8 @@ local main_aa_handler = {
 
 			for i = 1, #enemies_list do
 				local player = enemies_list[i]
-				if bit.band(entity.get_esp_data(player).flags or 0, bit.lshift(1, 11)) == 0 then
+				local esp_data = entity.get_esp_data(player)
+				if esp_data and bit.band(esp_data.flags or 0, bit.lshift(1, 11)) == 0 then
 					local evx, evy, evz = entity.get_prop(player, "m_vecVelocity")
 					local sim_time = entity.get_prop(player, "m_flSimulationTime") or 0
 					local tickinterval = globals.tickinterval()
@@ -6163,7 +6165,7 @@ generate_quadrant_offsets = function(quad, max_weight, current_state)
 	elseif quad == "q3" then
 		yaw = client.random_float(-max_weight, 0) * yaw_mult
 		desync = client.random_float(0.75, 1.00)
-	else -- "q4"
+	else 
 		yaw = client.random_float(-max_weight, 0) * yaw_mult
 		desync = -client.random_float(0.35, 0.60)
 	end
@@ -6194,11 +6196,11 @@ function trigger_anti_bruteforce(reason, attacker)
 	local timer_val = gui.antiaim.ab.timer:get()
 	local split_active = gui.antiaim.ab.split:get()
 
-	-- Get current AA movement state key name from AntiAimConditions
+	
 	local current_state = (aa_state and aa_state.state and AntiAimConditions.states[aa_state.state]) and AntiAimConditions.states[aa_state.state][1] or "default"
 	ab_state.state = current_state
 
-	-- Calculate ab weights
+	
 	local max_weight = power == 0 and client.random_float(0.20, 0.50) or power / 100
 	local best_quad = choose_best_quadrant(attacker, current_state, reason, max_weight)
 
@@ -6217,10 +6219,10 @@ function trigger_anti_bruteforce(reason, attacker)
 	if timer_val > 0 then
 		ab_state.timer_end = globals.realtime() + timer_val * 0.1
 	else
-		ab_state.timer_end = nil -- On trigger (until next trigger)
+		ab_state.timer_end = nil 
 	end
 
-	-- Always push screen and console event logs if Anti-bruteforce is On
+	
 	local log_text_screen, log_text_console
 	local time_suffix_screen = timer_val > 0 and string.format(" \aCDCDCD\x01(%s, %s, %.1fs)", best_quad, current_state, timer_val * 0.1) or string.format(" \aCDCDCD\x01(%s, %s, static)", best_quad, current_state)
 	local time_suffix_console = timer_val > 0 and string.format(", %s, %s, %.1fs", best_quad, current_state, timer_val * 0.1) or string.format(", %s, %s", best_quad, current_state)
@@ -6266,7 +6268,7 @@ eventLogger.events = {
 			return
 		end
 
-		-- Record that we successfully evaded (safe quadrant)
+		
 		if ab_state.active then
 			local attacker = evade_self.attacker
 			local name = entity.get_player_name(attacker) or tostring(attacker)
@@ -6278,10 +6280,10 @@ eventLogger.events = {
 			update_quadrant_scores("_global_shared", current_state, q_left, q_right, 1)
 		end
 
-		-- Trigger anti-bruteforce if "Evade" trigger is enabled
+		
 		trigger_anti_bruteforce("Evade", evade_self.attacker)
 
-		-- Block standard evade log if anti-bruteforce is On
+		
 		if gui.antiaim.ab and gui.antiaim.ab.on and gui.antiaim.ab.on:get() == 1 then
 			return
 		end
@@ -6332,7 +6334,7 @@ eventLogger.events = {
 					receive_attacker
 				}
 			},
-			not v_receive_0 and v_receive_4 ~= "generic" and { -- legs
+			not v_receive_0 and v_receive_4 ~= "generic" and { 
 				" in ",
 				{
 					v_receive_4
@@ -6417,7 +6419,7 @@ eventLogger.events = {
 		local v_damage_1 = damage_self.attacker ~= 0 and client.userid_to_entindex(damage_self.attacker) or 0
 
 		if v_damage_0 == LocalPawn.self then
-			-- Record that we got resolved/hit (unsafe quadrant)
+			
 			if ab_state.active and v_damage_1 ~= 0 then
 				local name = entity.get_player_name(v_damage_1) or tostring(v_damage_1)
 				local q_left = get_quadrant(ab_state.yaw_shift_left, ab_state.desync_shift_left)
@@ -6426,7 +6428,7 @@ eventLogger.events = {
 				
 				local hitg = damage_self.hitgroup
 				local penalty = 2
-				if hitg == 1 or (hitg >= 4 and hitg <= 7) then -- head or limbs
+				if hitg == 1 or (hitg >= 4 and hitg <= 7) then 
 					penalty = 4
 				end
 				
@@ -6653,7 +6655,7 @@ function eventLogger.invent(eventLogger_invent_alpha, eventLogger_invent_x, even
 		local v_eventLogger_invent_4 = eventLogger_invent_x[i]
 
 		if not v_eventLogger_invent_4 then
-			-- block empty
+			
 		elseif type(v_eventLogger_invent_4) == "table" then
 			local v_eventLogger_invent_5 = eventLogger_invent_x[i][1] == true and 1 or eventLogger_invent_x[i][1] == false and 2 or 0
 
@@ -6771,11 +6773,11 @@ function eventLogger.run(eventLogger_run_self)
 	eventManager.aim_hit(1, eventLogger_run_self.events.hit)
 	eventManager.aim_miss(1, eventLogger_run_self.events.miss)
 	gui.misc.logs.on:set_callback(function(f_319_self)
-		-- eventManager.aim_fire(f_319_self.value, eventLogger_run_self.events.aim)
-		-- eventManager.aim_hit(f_319_self.value, eventLogger_run_self.events.hit)
-		-- eventManager.aim_miss(f_319_self.value, eventLogger_run_self.events.miss)
+		
+		
+		
 		eventManager.player_hurt(f_319_self.value, eventLogger_run_self.events.damage)
-		-- eventManager.enemy_shot(f_319_self.value, eventLogger_run_self.events.evade)
+		
 		eventManager.local_spawned(f_319_self.value, eventLogger_run_self.clear_stack)
 
 		local v_319_0 = iif(f_319_self.value, false, nil)
@@ -7102,7 +7104,7 @@ feature_modules.recharger = {
 		gui.rage.recharge:set_event("setup_command", run_self.work)
 		gui.rage.recharge:set_callback(function(f_347_self)
 			if f_347_self.value then
-				-- block empty
+				
 			elseif run_self.state ~= nil then
 				safe_override(reference.rage.aimbot.enable.hotkey)
 				safe_set(reference.rage.aimbot.enable.hotkey, "Always On", 0)
@@ -8175,32 +8177,32 @@ function widgets.debugger.paint(debugger_paint_self, debugger_paint_x, debugger_
 
 	local fake_yaw = real_yaw - desync_val
 
-	-- Draw glassmorphic background
+	
 	render_module.blur(debugger_paint_x, debugger_paint_y, debugger_paint_w, debugger_paint_h)
 	render_module.rounded_side_h(debugger_paint_x, debugger_paint_y, debugger_paint_w, debugger_paint_h, palette.panel.g1, 4)
 
-	-- Draw circle background
+	
 	render_module.circle(cx, cy, ColorUtils.rgb(5, 6, 8, 96), r)
 	render_module.circle_outline(cx, cy, ColorUtils.rgb(255, 255, 255, 20), r + 2, 0, 1, 1)
 
-	-- Calculate positions for Real and Fake indicators
+	
 	local rx, ry = get_angle_pos(cx, cy, r, real_yaw, camera_yaw)
 	local fx, fy = get_angle_pos(cx, cy, r, fake_yaw, camera_yaw)
 
-	-- Draw Real line and indicator
+	
 	render_module.line(cx, cy, rx, ry, ColorUtils(235, 75, 75))
 	render_module.circle(rx, ry, ColorUtils(235, 75, 75), 3)
 	render_module.circle_outline(rx, ry, palette.white, 3, 0, 1, 1)
 
-	-- Draw Fake line and indicator
+	
 	render_module.line(cx, cy, fx, fy, palette.accent)
 	render_module.circle(fx, fy, palette.accent, 3)
 	render_module.circle_outline(fx, fy, palette.white, 3, 0, 1, 1)
 
-	-- Draw small center dot
+	
 	render_module.circle(cx, cy, palette.white:alphen(220), 1.5)
 
-	-- Draw text info
+	
 	local desync_abs = math.floor(math.abs(desync_val) + 0.5)
 	local side_suffix = ""
 	if desync_abs > 1 then
