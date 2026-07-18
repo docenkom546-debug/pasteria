@@ -7,7 +7,7 @@ local config = {
 	build = "stable",
 	version = "Recode",
 
-	level = 2 
+	level = 2 --DONT CHANGE THIS VALUE ITS CAN BREAK YOUR CONFIG
 }
 
 config.user = config.isdebug and "admin" or ( panorama.open().MyPersonaAPI.GetName() or "user" )
