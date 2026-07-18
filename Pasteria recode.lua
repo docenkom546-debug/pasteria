@@ -7,7 +7,7 @@ local config = {
 	build = "stable",
 	version = "Recode",
 
-	level = 2 -- DONT CHANGE THIS VALUE IT CAN BRAKE YOUR CONFIG
+	level = 2 
 }
 
 config.user = config.isdebug and "admin" or ( panorama.open().MyPersonaAPI.GetName() or "user" )
@@ -1561,7 +1561,7 @@ local function init_player_history(name)
 		}
 		for i = 1, #AntiAimConditions.states do
 			local state_key = AntiAimConditions.states[i][1]
-			ab_history[name][state_key] = { q1 = 0, q2 = 0, q3 = 0, q4 = 0 }
+			ab_history[name][state_key] = { q1 = 0, q2 = 0, q3 = 0, q4 = 0, desync_target = 1 }
 		end
 	end
 end
@@ -1607,8 +1607,8 @@ local function update_quadrant_scores(name, current_state, q_left, q_right, delt
 	end
 end
 
-predict_real_yaw = function(quad, max_weight, current_state)
-	local yaw_offset, desync_offset = generate_quadrant_offsets(quad, max_weight, current_state)
+predict_real_yaw = function(quad, max_weight, current_state, desync_target)
+	local yaw_offset, desync_offset = generate_quadrant_offsets(quad, max_weight, current_state, desync_target)
 
 	local desync_settings = active_aa_settings.cur.des
 	local left_limit = desync_settings.l or 60
@@ -1707,7 +1707,7 @@ local function choose_best_quadrant(attacker, current_state, reason, max_weight)
 		
 		local dist_logs = {}
 		local function get_quad_score_mod(q)
-			local pred_yaw = predict_real_yaw(q, max_weight, current_state)
+			local pred_yaw = predict_real_yaw(q, max_weight, current_state, desync_target)
 			local rad = math.rad(math.normalize_yaw(pred_yaw - ab_state.last_real_yaw))
 			
 			local pred_hx = px + vx * math.cos(rad) - vy * math.sin(rad)
@@ -1735,8 +1735,10 @@ local function choose_best_quadrant(attacker, current_state, reason, max_weight)
 		q3_score = q3_score + get_quad_score_mod("q3")
 		q4_score = q4_score + get_quad_score_mod("q4")
 
-		client.log(string.format("[ab] Avoid same position active! Head distances: %s", table.concat(dist_logs, ", ")))
+		--client.log(string.format("[ab] Avoid same position active! Head distances: %s", table.concat(dist_logs, ", ")))
 	end
+
+	local desync_target = profile.desync_target or 1
 
 	local max_val = math.max(q1_score, q2_score, q3_score, q4_score)
 	local best = {}
@@ -1753,7 +1755,7 @@ local function choose_best_quadrant(attacker, current_state, reason, max_weight)
 			table.remove(player_history.recent_quads, 1)
 		end
 	end
-	return selected
+	return selected, desync_target
 end
 
 LocalPawn, entities_list, enemies_list, teammates_list = {
@@ -2150,7 +2152,8 @@ reference = {
 		other = {
 			peek = hui.reference("RAGE", "Other", "Quick peek assist"),
 			duck = hui.reference("RAGE", "Other", "Duck peek assist"),
-			log_misses = hui.reference("RAGE", "Other", "Log misses due to spread")
+			log_misses = hui.reference("RAGE", "Other", "Log misses due to spread"),
+			delay_shot = hui.reference("RAGE", "Other", "Delay shot")
 		}
 	},
 	aa = {
@@ -2382,6 +2385,7 @@ gui = {
 		aimbot_helper = ui_helpers.feature({ui_groups.angles:checkbox("Aimbot helper")}, function(helper_enable)
 			local weapon = ui_groups.angles:combobox("\nWeapon", {"SSG-08", "AWP", "Auto Snipers"})
 			
+			local ssg_delay_shot = ui_groups.angles:checkbox("Delay shot \nSSG08")
 			local ssg_select = ui_groups.angles:multiselect("\nSelect SSG08", {"Force safe point", "Prefer body aim", "Force body aim", "Ping spike"})
 			local ssg_force_safe = ui_groups.angles:multiselect("Force safe point triggers SSG08", {"Enemy HP < X", "X Missed Shots", "Lethal", "Height advantage", "Enemy higher than you"})
 			local ssg_force_safe_hp = ui_groups.angles:slider("Force safe point HP Trigger SSG08", 1, 100, 50, true, "hp")
@@ -2394,6 +2398,7 @@ gui = {
 			local ssg_force_body_miss = ui_groups.angles:slider("Force body aim Missed Trigger SSG08", 1, 10, 2, true, "sh")
 			local ssg_ping_spike_value = ui_groups.angles:slider("Ping spike value SSG08", 1, 200, 80, true, "ms")
 
+			local awp_delay_shot = ui_groups.angles:checkbox("Delay shot \nAWP")
 			local awp_select = ui_groups.angles:multiselect("\nSelect AWP", {"Force safe point", "Prefer body aim", "Force body aim", "Ping spike"})
 			local awp_force_safe = ui_groups.angles:multiselect("Force safe point triggers AWP", {"Enemy HP < X", "X Missed Shots", "Lethal", "Height advantage", "Enemy higher than you"})
 			local awp_force_safe_hp = ui_groups.angles:slider("Force safe point HP Trigger AWP", 1, 100, 50, true, "hp")
@@ -2406,6 +2411,7 @@ gui = {
 			local awp_force_body_miss = ui_groups.angles:slider("Force body aim Missed Trigger AWP", 1, 10, 2, true, "sh")
 			local awp_ping_spike_value = ui_groups.angles:slider("Ping spike value AWP", 1, 200, 130, true, "ms")
 
+			local auto_delay_shot = ui_groups.angles:checkbox("Delay shot \nAUTO")
 			local auto_select = ui_groups.angles:multiselect("\nSelect AUTO", {"Force safe point", "Prefer body aim", "Force body aim", "Ping spike"})
 			local auto_force_safe = ui_groups.angles:multiselect("Force safe point triggers AUTO", {"Enemy HP < X", "X Missed Shots", "Lethal", "Height advantage", "Enemy higher than you"})
 			local auto_force_safe_hp = ui_groups.angles:slider("Force safe point HP Trigger AUTO", 1, 100, 50, true, "hp")
@@ -2419,6 +2425,7 @@ gui = {
 			local auto_ping_spike_value = ui_groups.angles:slider("Ping spike value AUTO", 1, 200, 105, true, "ms")
 
 			
+			ssg_delay_shot:depend({weapon, "SSG-08"})
 			ssg_select:depend({weapon, "SSG-08"})
 			ssg_force_safe:depend({weapon, "SSG-08"}, {ssg_select, "Force safe point"})
 			ssg_force_safe_hp:depend({weapon, "SSG-08"}, {ssg_select, "Force safe point"}, {ssg_force_safe, "Enemy HP < X"})
@@ -2431,6 +2438,7 @@ gui = {
 			ssg_force_body_miss:depend({weapon, "SSG-08"}, {ssg_select, "Force body aim"}, {ssg_force_body, "X Missed Shots"})
 			ssg_ping_spike_value:depend({weapon, "SSG-08"}, {ssg_select, "Ping spike"})
 
+			awp_delay_shot:depend({weapon, "AWP"})
 			awp_select:depend({weapon, "AWP"})
 			awp_force_safe:depend({weapon, "AWP"}, {awp_select, "Force safe point"})
 			awp_force_safe_hp:depend({weapon, "AWP"}, {awp_select, "Force safe point"}, {awp_force_safe, "Enemy HP < X"})
@@ -2443,6 +2451,7 @@ gui = {
 			awp_force_body_miss:depend({weapon, "AWP"}, {awp_select, "Force body aim"}, {awp_force_body, "X Missed Shots"})
 			awp_ping_spike_value:depend({weapon, "AWP"}, {awp_select, "Ping spike"})
 
+			auto_delay_shot:depend({weapon, "Auto Snipers"})
 			auto_select:depend({weapon, "Auto Snipers"})
 			auto_force_safe:depend({weapon, "Auto Snipers"}, {auto_select, "Force safe point"})
 			auto_force_safe_hp:depend({weapon, "Auto Snipers"}, {auto_select, "Force safe point"}, {auto_force_safe, "Enemy HP < X"})
@@ -2457,6 +2466,7 @@ gui = {
 
 			return {
 				weapon = weapon,
+				ssg_delay_shot = ssg_delay_shot,
 				ssg_select = ssg_select,
 				ssg_force_safe = ssg_force_safe,
 				ssg_force_safe_hp = ssg_force_safe_hp,
@@ -2469,6 +2479,7 @@ gui = {
 				ssg_force_body_miss = ssg_force_body_miss,
 				ssg_ping_spike_value = ssg_ping_spike_value,
 
+				awp_delay_shot = awp_delay_shot,
 				awp_select = awp_select,
 				awp_force_safe = awp_force_safe,
 				awp_force_safe_hp = awp_force_safe_hp,
@@ -2481,6 +2492,7 @@ gui = {
 				awp_force_body_miss = awp_force_body_miss,
 				awp_ping_spike_value = awp_ping_spike_value,
 
+				auto_delay_shot = auto_delay_shot,
 				auto_select = auto_select,
 				auto_force_safe = auto_force_safe,
 				auto_force_safe_hp = auto_force_safe_hp,
@@ -2597,7 +2609,8 @@ gui = {
 			edge = ui_groups.angles:hotkey("Edge yaw", false, 0),
 			fs = ui_helpers.feature(ui_groups.angles:checkbox("Freestanding", 0), function(checkbox_element)
 				return {
-					static = ui_groups.angles:checkbox("\f<p>Static\nfs")
+					static = ui_groups.angles:checkbox("\f<p>Static\nfs"),
+					disabler = ui_groups.angles:multiselect("\f<p>Disabler", table.distribute(AntiAimConditions.states, 2))
 				}, true
 			end),
 			manual = ui_helpers.feature(ui_groups.angles:checkbox("Manual yaw"), function()
@@ -4265,7 +4278,33 @@ end)
 local function update_aa_base_state()
 	aa_state.resort = gui.antiaim.general.resort and gui.antiaim.general.resort.value
 	aa_state.send_packet = cmd.chokedcommands == 0
-	aa_state.state = get_player_movement_state()
+	local new_state = get_player_movement_state()
+
+	if ab_state.active and ab_state.state ~= new_state then
+		local max_weight = gui.antiaim.ab.power:get()
+		if max_weight == 0 then
+			max_weight = ab_state.auto_power or 0.3
+		else
+			max_weight = max_weight / 100
+		end
+
+		local best_quad = ab_state.best_quad or "q1"
+		local desync_target = ab_state.applied_target or 1
+		local split_active = gui.antiaim.ab.split:get()
+
+		if split_active then
+			ab_state.yaw_shift_left, ab_state.desync_shift_left = generate_quadrant_offsets(best_quad, max_weight, new_state, desync_target)
+			ab_state.yaw_shift_right, ab_state.desync_shift_right = generate_quadrant_offsets(best_quad, max_weight, new_state, desync_target)
+		else
+			local common_yaw, common_desync = generate_quadrant_offsets(best_quad, max_weight, new_state, desync_target)
+			ab_state.yaw_shift_left = common_yaw
+			ab_state.yaw_shift_right = common_yaw
+			ab_state.desync_shift_left = common_desync
+			ab_state.desync_shift_right = common_desync
+		end
+	end
+
+	aa_state.state = new_state
 
 	select_aa_profile()
 	select_defensive_snap_profile()
@@ -4348,6 +4387,13 @@ local aa_logic_modules = {
 			local manual_yaw_override = self:manual()
 			local is_edge_yaw_active = gui.antiaim.general.edge:get()
 			local is_freestanding_active = not is_edge_yaw_active and not manual_yaw_override and ui.is_active(gui.antiaim.general.fs.on)
+
+			if is_freestanding_active and gui.antiaim.general.fs.disabler then
+				local current_state_name = AntiAimConditions.states[aa_state.state] and AntiAimConditions.states[aa_state.state][2]
+				if current_state_name and gui.antiaim.general.fs.disabler:get(current_state_name) then
+					is_freestanding_active = false
+				end
+			end
 
 			safe_override(reference.aa.angles.freestand, is_freestanding_active)
 			safe_override(reference.aa.angles.edge, is_edge_yaw_active)
@@ -4748,19 +4794,20 @@ local aa_logic_modules = {
 		ticks = 0,
 		prev_des = 0,
 		counter = 0,
+		defensive_switch = false,
 		pitch = {
 			["Static"] = function(self, settings)
 				return settings.ang
 			end,
 			["Jitter"] = function(self, settings)
-				return aa_state.switch and settings.ang or settings.ang2
+				return self.defensive_switch and settings.ang or settings.ang2
 			end,
 			["Random"] = function(self, settings)
-				return client.random_int(settings.ang, settings.ang2)
+				return client.random_int(math.min(settings.ang, settings.ang2), math.max(settings.ang, settings.ang2))
 			end,
 			["Random Static"] = function(self, settings)
 				if not self.once.srx then
-					self.once.srx = client.random_int(settings.ang, settings.ang2)
+					self.once.srx = client.random_int(math.min(settings.ang, settings.ang2), math.max(settings.ang, settings.ang2))
 				end
 
 				return self.once.srx
@@ -4778,7 +4825,7 @@ local aa_logic_modules = {
 				return 360 - settings.ang
 			end,
 			["Jitter"] = function(self, settings)
-				return 180 + settings.ang * (self.once.switch and 0.5 or -0.5)
+				return 180 + settings.ang * (self.defensive_switch and 0.5 or -0.5)
 			end,
 			["Random"] = function(self, settings)
 				return 180 + client.random_int(settings.ang * -0.5, settings.ang * 0.5)
@@ -4800,7 +4847,7 @@ local aa_logic_modules = {
 				return 180 + math.lerp(settings.ang * -0.5, settings.ang * 0.5, globals.curtime() * (settings.speed * 0.1) % 1), true
 			end,
 			["Spin Jitter"] = function(self, settings)
-				local direction = self.once.switch and 1 or -1
+				local direction = self.defensive_switch and 1 or -1
 				local spin_angle = math.lerp(settings.ang * -0.5, settings.ang * 0.5, globals.curtime() * (settings.speed * 0.1) % 1)
 
 				return direction * 90 + spin_angle
@@ -4821,39 +4868,6 @@ local aa_logic_modules = {
 			end
 		},
 		once = {},
-		lby_tracker = {
-			last_update_time = 0, 
-			last_standing_time = 0, 
-			was_moving = false,     
-			update_interval = 1.1,  
-		},
-		predict_lby_update = function(self)
-			local tracker = self.lby_tracker
-			local curtime = globals.curtime()
-			local is_moving = LocalPawn.velocity > 0.1
-
-			if is_moving then
-				tracker.was_moving = true
-				tracker.last_standing_time = curtime
-				return math.huge
-			end
-
-			if tracker.was_moving then
-				tracker.was_moving = false
-				tracker.last_standing_time = curtime
-				tracker.last_update_time = curtime
-			end
-
-			local elapsed = curtime - tracker.last_update_time
-			local time_to_next = tracker.update_interval - elapsed
-
-			if time_to_next <= 0 then
-				tracker.last_update_time = curtime
-				return 0
-			end
-
-			return time_to_next
-		end,
 		get_adaptive_choke_depth = function(self)
 			local lc_left = LocalPawn.exploit.lc_left or 0
 			local latency = client.latency() or 0
@@ -4888,34 +4902,39 @@ local aa_logic_modules = {
 			end
 
 			if can_snap_now then
-				self.ticks = self.ticks + 1
+				local current_cmd = cmd.command_number
+				if current_cmd ~= self.last_snap_cmd then
+					self.last_snap_cmd = current_cmd
+					self.ticks = self.ticks + 1
+
+					local delay_raw = snap_settings.y and snap_settings.y.delay
+					local delay_val = tonumber(delay_raw) or 0
+					if delay_val <= 1 then
+						delay_val = 1
+					end
+					if self.ticks % (delay_val + 1) == 0 then
+						self.defensive_switch = not self.defensive_switch
+					end
+				end
 				can_snap_now = snap_settings.time >= self.ticks
 			else
 				self.ticks = 0
+				self.defensive_switch = false
+				self.last_snap_cmd = nil
 			end
 
 			aa_state.will_break_lc = LocalPawn.exploit.active and (LocalPawn.exploit.active == ScriptData.exploit.OS or cmd.force_defensive)
 
 			if can_snap_now then
-				local time_to_lby = self:predict_lby_update()
-				local tick_interval = globals.tickinterval()
-				local lby_imminent = time_to_lby <= tick_interval * 2
-
-				if (snap_settings.x.on or snap_settings.y.on) and (not aa_state.snapping or LocalPawn.exploit.lc_left <= min_reserve or not LocalPawn.exploit.defensive_active) then
+				if (snap_settings.x.on or snap_settings.y.on) and (not aa_state.snapping or LocalPawn.exploit.lc_left <= min_reserve or LocalPawn.exploit.defensive_active) then
 					frame_flags.force_send = true
 				end
 
 				aa_state.snapping, final_angles.snap = true, {}
 				self.once.apex = self.once.apex or LocalPawn.exploit.lc_left
 
-				if aa_state.send_packet then
+				if aa_state.send_packet or LocalPawn.exploit.defensive_active then
 					self.once.switch = not self.once.switch
-
-					if lby_imminent then
-						self.once.lby_override = true
-					else
-						self.once.lby_override = false
-					end
 				else
 					self.once.switch = true
 				end
@@ -4933,14 +4952,7 @@ local aa_logic_modules = {
 					local yaw_result, force_send_flag = self.yaw[snap_settings.y.mode](self, snap_settings.y)
 
 					if yaw_result then
-						if self.once.lby_override then
-							final_angles.snap[2] = final_angles.yaw + yaw_result
-							if snap_settings.sd then
-								final_angles.des = yaw_result < 180 and 60 or -60
-								self.prev_des = final_angles.des
-							end
-						elseif self.once.switch then
-
+						if self.once.switch then
 							final_angles.snap[2] = final_angles.yaw + yaw_result
 
 							if snap_settings.sd then
@@ -4959,23 +4971,14 @@ local aa_logic_modules = {
 					end
 				end
 			elseif aa_state.snapping then
-				local time_to_lby = self:predict_lby_update()
-				local tick_interval = globals.tickinterval()
-				local lby_safe = time_to_lby > tick_interval * 3
-
+				self.counter = self.counter + 1
+				aa_state.snapping = false
+				final_angles.snap = nil
+				table.clear(self.once)
+				self.might_cross = false
+				
 				if not aa_state.send_packet then
 					frame_flags.force_send = true
-				elseif not lby_safe then
-					frame_flags.force_send = true
-					frame_flags.no_modifier = true
-				else
-					self.counter = self.counter + 1
-					aa_state.snapping = false
-					final_angles.snap = nil
-
-					table.clear(self.once)
-
-					self.might_cross = false
 				end
 			end
 		end,
@@ -4986,14 +4989,10 @@ local aa_logic_modules = {
 		end,
 		get_tickbase_phase = function(self)
 			local lc_left = LocalPawn.exploit.lc_left or 0
-			local snap_time = active_aa_settings.snap and active_aa_settings.snap.time or 14
-			if lc_left > snap_time * 0.7 then
-				return "choke"
-			elseif lc_left > 2 then
-				return "send"  
-			else
-				return "flush"  
+			if lc_left <= 1 then
+				return "flush"
 			end
+			return "choke"
 		end,
 		check_simtime_rewind = function(self)
 			local sim_time = entity.get_prop(LocalPawn.self, "m_flSimulationTime")
@@ -5021,12 +5020,12 @@ local aa_logic_modules = {
 			local simtime_rewound = self:check_simtime_rewind()
 
 			if simtime_rewound and aa_state.snapping then
-				frame_flags.force_send = false
+				frame_flags.force_send = true
 				frame_flags.no_modifier = true
 				frame_flags.no_offset = true
 			end
 
-			if phase == "flush" and aa_state.snapping and not LocalPawn.exploit.defensive_active then
+			if (phase == "flush" or LocalPawn.exploit.defensive_active) and aa_state.snapping then
 				frame_flags.force_send = true
 			end
 
@@ -5537,7 +5536,7 @@ local function handle_aa_delay(delay_settings)
 				elseif mode == "random" then
 					target_delay_ticks = client.random_int(1, value)
 				elseif mode == "break" then
-					target_delay_ticks = (client.random_int(1, 100) > 50) and client.random_int(1, value) or 1
+					target_delay_ticks = (client.random_int(1, 100) > 50) and math.clamp(math.floor((math.sin(globals.tickcount() * 0.15) * 0.5 + 0.5) * (value - 1) + 1.5) + client.random_int(-1, 1), 1, value) or 1
 				elseif mode == "increment" then
 					local max_val = math.max(1, value)
 					target_delay_ticks = (single_increment_counter % max_val) + 1
@@ -5597,7 +5596,7 @@ local function handle_aa_delay(delay_settings)
 					elseif left_mode == "random" then
 						target_delay_ticks = client.random_int(1, left_value)
 					elseif left_mode == "break" then
-						target_delay_ticks = (client.random_int(1, 100) > 50) and client.random_int(1, left_value) or 1
+						target_delay_ticks = (client.random_int(1, 100) > 50) and math.clamp(math.floor((math.sin(globals.tickcount() * 0.15) * 0.5 + 0.5) * (left_value - 1) + 1.5) + client.random_int(-1, 1), 1, left_value) or 1
 					elseif left_mode == "increment" then
 						local max_val = math.max(1, left_value)
 						target_delay_ticks = (left_increment_counter % max_val) + 1
@@ -5656,7 +5655,7 @@ local function handle_aa_delay(delay_settings)
 					elseif right_mode == "random" then
 						target_delay_ticks = client.random_int(1, right_value)
 					elseif right_mode == "break" then
-						target_delay_ticks = (client.random_int(1, 100) > 50) and client.random_int(1, right_value) or 1
+						target_delay_ticks = (client.random_int(1, 100) > 50) and math.clamp(math.floor((math.sin(globals.tickcount() * 0.15) * 0.5 + 0.5) * (right_value - 1) + 1.5) + client.random_int(-1, 1), 1, right_value) or 1
 					elseif right_mode == "increment" then
 						local max_val = math.max(1, right_value)
 						target_delay_ticks = (right_increment_counter % max_val) + 1
@@ -6149,25 +6148,34 @@ eventLogger = {
 	list = {}
 }
 
-generate_quadrant_offsets = function(quad, max_weight, current_state)
+generate_quadrant_offsets = function(quad, max_weight, current_state, desync_target)
 	local yaw_mult = 10
 	if current_state == "air" or current_state == "airc" then
 		yaw_mult = 20
 	end
 
+	local desync_settings = active_aa_settings.cur.des
+	local max_l = desync_settings.l or 60
+	local max_r = desync_settings.r or 60
+	local min_l = desync_settings.l_fluctuate or 20
+	local min_r = desync_settings.r_fluctuate or 20
+
+	local target_l = (desync_target == -1) and min_l or max_l
+	local target_r = (desync_target == -1) and min_r or max_r
+
 	local yaw, desync
 	if quad == "q1" then
 		yaw = client.random_float(0, max_weight) * yaw_mult
-		desync = client.random_float(0.75, 1.00)
+		desync = client.random_float(target_l * 0.75, target_l) / 58
 	elseif quad == "q2" then
 		yaw = client.random_float(0, max_weight) * yaw_mult
-		desync = -client.random_float(0.35, 0.60)
+		desync = -client.random_float(target_r * 0.75, target_r) / 58
 	elseif quad == "q3" then
 		yaw = client.random_float(-max_weight, 0) * yaw_mult
-		desync = client.random_float(0.75, 1.00)
+		desync = client.random_float(target_l * 0.75, target_l) / 58
 	else 
 		yaw = client.random_float(-max_weight, 0) * yaw_mult
-		desync = -client.random_float(0.35, 0.60)
+		desync = -client.random_float(target_r * 0.75, target_r) / 58
 	end
 	return yaw, desync
 end
@@ -6201,14 +6209,31 @@ function trigger_anti_bruteforce(reason, attacker)
 	ab_state.state = current_state
 
 	
-	local max_weight = power == 0 and client.random_float(0.20, 0.50) or power / 100
-	local best_quad = choose_best_quadrant(attacker, current_state, reason, max_weight)
+	local max_weight
+	if power == 0 then
+		local dist = aa_state.threat_dist or 200
+		local dist_weight = math.clamp(dist / 1000, 0.2, 0.5)
+		ab_state.auto_power = ab_state.auto_power or dist_weight
+		
+		if reason == "On damage" then
+			ab_state.auto_power = math.min(1.0, ab_state.auto_power * 1.5 + 0.1)
+		elseif reason == "Evade" then
+			ab_state.auto_power = math.lerp(ab_state.auto_power, dist_weight, 0.5)
+		end
+		max_weight = ab_state.auto_power
+	else
+		max_weight = power / 100
+		ab_state.auto_power = nil
+	end
+	local best_quad, desync_target = choose_best_quadrant(attacker, current_state, reason, max_weight)
+	ab_state.best_quad = best_quad
+	ab_state.applied_target = desync_target
 
 	if split_active then
-		ab_state.yaw_shift_left, ab_state.desync_shift_left = generate_quadrant_offsets(best_quad, max_weight, current_state)
-		ab_state.yaw_shift_right, ab_state.desync_shift_right = generate_quadrant_offsets(best_quad, max_weight, current_state)
+		ab_state.yaw_shift_left, ab_state.desync_shift_left = generate_quadrant_offsets(best_quad, max_weight, current_state, desync_target)
+		ab_state.yaw_shift_right, ab_state.desync_shift_right = generate_quadrant_offsets(best_quad, max_weight, current_state, desync_target)
 	else
-		local common_yaw, common_desync = generate_quadrant_offsets(best_quad, max_weight, current_state)
+		local common_yaw, common_desync = generate_quadrant_offsets(best_quad, max_weight, current_state, desync_target)
 		ab_state.yaw_shift_left = common_yaw
 		ab_state.yaw_shift_right = common_yaw
 		ab_state.desync_shift_left = common_desync
@@ -6276,8 +6301,17 @@ eventLogger.events = {
 			local q_right = get_quadrant(ab_state.yaw_shift_right, ab_state.desync_shift_right)
 			local current_state = ab_state.state or "default"
 			
-			update_quadrant_scores(name, current_state, q_left, q_right, 1)
-			update_quadrant_scores("_global_shared", current_state, q_left, q_right, 1)
+			update_quadrant_scores(name, current_state, q_left, q_right, 2)
+			update_quadrant_scores("_global_shared", current_state, q_left, q_right, 3)
+
+			init_player_history(name)
+			init_player_history("_global_shared")
+			local p1 = ab_history[name][current_state] or ab_history[name].default
+			local p2 = ab_history["_global_shared"][current_state] or ab_history["_global_shared"].default
+			local applied = ab_state.applied_target or 1
+
+			p1.desync_target = applied
+			p2.desync_target = applied
 		end
 
 		
@@ -6432,8 +6466,17 @@ eventLogger.events = {
 					penalty = 4
 				end
 				
-				update_quadrant_scores(name, current_state, q_left, q_right, -penalty)
-				update_quadrant_scores("_global_shared", current_state, q_left, q_right, -penalty)
+				update_quadrant_scores(name, current_state, q_left, q_right, -penalty * 2)
+				update_quadrant_scores("_global_shared", current_state, q_left, q_right, -penalty) 
+
+				init_player_history(name)
+				init_player_history("_global_shared")
+				local p1 = ab_history[name][current_state] or ab_history[name].default
+				local p2 = ab_history["_global_shared"][current_state] or ab_history["_global_shared"].default
+				local applied = ab_state.applied_target or 1
+
+				p1.desync_target = applied == 1 and -1 or 1
+				p2.desync_target = applied == 1 and -1 or 1
 			end
 			if damage_self.health > 0 then
 				trigger_anti_bruteforce("On damage", v_damage_1)
@@ -7150,6 +7193,9 @@ feature_modules.aimbot_helper = {
 	end,
 	work = function(self)
 		if not gui.rage.aimbot_helper.on.value then
+			safe_override(self.ps_checkbox)
+			safe_override(self.ps_slider)
+			safe_override(reference.rage.other.delay_shot)
 			return
 		end
 		local me = entity.get_local_player()
@@ -7164,7 +7210,12 @@ feature_modules.aimbot_helper = {
 		local prefix = (weapon == "CWeaponSSG08" and "ssg_") or
 		               (weapon == "CWeaponAWP" and "awp_") or
 		               ((weapon == "CWeaponG3SG1" or weapon == "CWeaponSCAR20") and "auto_")
-		if not prefix then return end
+		if not prefix then 
+			safe_override(self.ps_checkbox)
+			safe_override(self.ps_slider)
+			safe_override(reference.rage.other.delay_shot, false)
+			return 
+		end
 
 		local select_el = gui.rage.aimbot_helper[prefix .. "select"]
 		local force_safe_el = gui.rage.aimbot_helper[prefix .. "force_safe"]
@@ -7177,6 +7228,11 @@ feature_modules.aimbot_helper = {
 		local force_body_hp_el = gui.rage.aimbot_helper[prefix .. "force_body_hp"]
 		local force_body_miss_el = gui.rage.aimbot_helper[prefix .. "force_body_miss"]
 		local ping_spike_value_el = gui.rage.aimbot_helper[prefix .. "ping_spike_value"]
+		local delay_shot_el = gui.rage.aimbot_helper[prefix .. "delay_shot"]
+
+		if delay_shot_el then
+			safe_override(reference.rage.other.delay_shot, delay_shot_el.value)
+		end
 
 		local my_pos = vector(entity.get_origin(me))
 		local players = entity.get_players(true)
