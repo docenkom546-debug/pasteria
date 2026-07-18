@@ -1837,7 +1837,9 @@ eventManager.run_command:set(function(cmd)
 		ab_state.desync_shift_right = 0
 		ab_state.timer_end = nil
 		
-		eventLogger.push("ab", "[ab] Reset", "\aB3B3B3\x01•\aE6E6E6\x02 ab \aE6E6E6\x01->\aE6E6E6\x02 Reset")
+		if gui.misc.logs.events:get("Anti-bruteforce info") then
+			eventLogger.push("ab", "[ab] Reset", "\aB3B3B3\x01•\aE6E6E6\x02 ab \aE6E6E6\x01->\aE6E6E6\x02 Reset")
+		end
 	end
 end)
 
@@ -2554,7 +2556,8 @@ gui = {
 					"Ragebot shots",
 					"Harming enemies",
 					"Getting harmed",
-					"Anti-aim info"
+					"Anti-aim info",
+					"Anti-bruteforce info"
 				}),
 				output = ui_groups.angles:multiselect("\f<p>Output", {
 					"Console",
@@ -6283,7 +6286,9 @@ function trigger_anti_bruteforce(reason, attacker)
 			time_suffix_console
 		)
 	end
-	eventLogger.push("ab", log_text_console, log_text_screen)
+	if gui.misc.logs.events:get("Anti-bruteforce info") then
+		eventLogger.push("ab", log_text_console, log_text_screen)
+	end
 end
 
 eventLogger.events = {
