@@ -1690,7 +1690,7 @@ local function choose_best_quadrant(attacker, current_state, reason, max_weight)
 		local num_recent = #player_history.recent_quads
 		for i = 1, num_recent do
 			local q = player_history.recent_quads[i]
-			local penalty = (i == num_recent) and -15 or -8
+			local penalty = (i == num_recent) and -20 or (i == num_recent - 1 and -15 or -8)
 			if q == "q1" then q1_score = q1_score + penalty
 			elseif q == "q2" then q2_score = q2_score + penalty
 			elseif q == "q3" then q3_score = q3_score + penalty
@@ -1735,7 +1735,7 @@ local function choose_best_quadrant(attacker, current_state, reason, max_weight)
 		q3_score = q3_score + get_quad_score_mod("q3")
 		q4_score = q4_score + get_quad_score_mod("q4")
 
-		--client.log(string.format("[ab] Avoid same position active! Head distances: %s", table.concat(dist_logs, ", ")))
+		
 	end
 
 	local desync_target = profile.desync_target or 1
@@ -1751,7 +1751,7 @@ local function choose_best_quadrant(attacker, current_state, reason, max_weight)
 	local selected = best[client.random_int(1, #best)]
 	if player_history and player_history.recent_quads then
 		table.insert(player_history.recent_quads, selected)
-		if #player_history.recent_quads > 2 then
+		if #player_history.recent_quads > 3 then
 			table.remove(player_history.recent_quads, 1)
 		end
 	end
@@ -2080,6 +2080,14 @@ eventManager.player_connect_full:set(function(event_data)
 	eventManager.local_connect_full:fire(event_data)
 end)
 
+local session_rounds = 0
+
+client.set_event_callback("player_connect_full", function(event_data)
+	if client.userid_to_entindex(event_data.userid) == LocalPawn.self then
+		session_rounds = 0
+	end
+end)
+
 client.set_event_callback("round_start", function(event_data)
 	ab_state.active = false
 	ab_state.yaw_shift_left = 0
@@ -2087,6 +2095,9 @@ client.set_event_callback("round_start", function(event_data)
 	ab_state.desync_shift_left = 0
 	ab_state.desync_shift_right = 0
 	ab_state.timer_end = nil
+
+	session_rounds = session_rounds + 1
+	cprint(string.format("\v=================== \rround %d \v====================", session_rounds))
 end)
 
 client.set_event_callback("player_disconnect", function(event_data)
@@ -2912,7 +2923,12 @@ for i, condition_data in ipairs(AntiAimConditions.states) do
 				condition_id,
 				"misc",
 				"speed"
-			}, parent_group:slider("\nspeed\f<z>misc", 0, 30, 10, true, "t", 1, aa_builder_slider_labels.speed))
+			}, parent_group:slider("\nspeed\f<z>misc", 0, 30, 10, true, "t", 1, aa_builder_slider_labels.speed)),
+			step = create_aa_builder_control({
+				condition_id,
+				"misc",
+				"step"
+			}, parent_group:slider("\nstep\f<z>misc", 0, 20, 0, true, "°"))
 		}
 
 		local left = {
@@ -2931,7 +2947,12 @@ for i, condition_data in ipairs(AntiAimConditions.states) do
 				condition_id,
 				"misc",
 				"speed_l"
-			}, parent_group:slider("\nspeed_l\f<z>misc_l", 0, 30, 10, true, "t", 1, aa_builder_slider_labels.speed))
+			}, parent_group:slider("\nspeed_l\f<z>misc_l", 0, 30, 10, true, "t", 1, aa_builder_slider_labels.speed)),
+			step = create_aa_builder_control({
+				condition_id,
+				"misc",
+				"step_l"
+			}, parent_group:slider("\nstep_l\f<z>misc_l", 0, 20, 0, true, "°"))
 		}
 
 		local right = {
@@ -2950,7 +2971,12 @@ for i, condition_data in ipairs(AntiAimConditions.states) do
 				condition_id,
 				"misc",
 				"speed_r"
-			}, parent_group:slider("\nspeed_r\f<z>misc_r", 0, 30, 10, true, "t", 1, aa_builder_slider_labels.speed))
+			}, parent_group:slider("\nspeed_r\f<z>misc_r", 0, 30, 10, true, "t", 1, aa_builder_slider_labels.speed)),
+			step = create_aa_builder_control({
+				condition_id,
+				"misc",
+				"step_r"
+			}, parent_group:slider("\nstep_r\f<z>misc_r", 0, 20, 0, true, "°"))
 		}
 
 		local independent_cycles = create_aa_builder_control({
@@ -2978,16 +3004,19 @@ for i, condition_data in ipairs(AntiAimConditions.states) do
 			mode = single.mode,
 			range = single.range,
 			speed = single.speed,
+			step = single.step,
 
 			label_l = left.label,
 			mode_l = left.mode,
 			range_l = left.range,
 			speed_l = left.speed,
+			step_l = left.step,
 
 			label_r = right.label,
 			mode_r = right.mode,
 			range_r = right.range,
-			speed_r = right.speed
+			speed_r = right.speed,
+			step_r = right.step
 		}, {
 			sync_mode = {
 				{ base_element, true },
@@ -3000,16 +3029,19 @@ for i, condition_data in ipairs(AntiAimConditions.states) do
 			mode = dep_single,
 			range = dep_single,
 			speed = dep_single,
+			step = dep_single,
 
 			label_l = dep_sides,
 			mode_l = dep_sides,
 			range_l = dep_sides,
 			speed_l = dep_sides,
+			step_l = dep_sides,
 
 			label_r = dep_sides,
 			mode_r = dep_sides,
 			range_r = dep_sides,
-			speed_r = dep_sides
+			speed_r = dep_sides,
+			step_r = dep_sides
 		}
 	end)
 	current_builder_tab.delay = ui_helpers.feature(create_aa_builder_control({
@@ -3036,9 +3068,21 @@ for i, condition_data in ipairs(AntiAimConditions.states) do
 			condition_id,
 			"delay",
 			"single_value"
-		}, ui_groups.other:slider("\nvalue\f<z>", 0, 16, 0, true, "t", 1, aa_builder_slider_labels.delay)):depend({
+		}, ui_groups.other:slider("\nvalue (min)\f<z>", 0, 16, 0, true, "t", 1, aa_builder_slider_labels.delay)):depend({
 			type_element,
 			"single"
+		})
+
+		local single_value_max = create_aa_builder_control({
+			condition_id,
+			"delay",
+			"single_value_max"
+		}, ui_groups.other:slider("\nvalue (max)\f<z>", 0, 16, 0, true, "t", 1, aa_builder_slider_labels.delay)):depend({
+			type_element,
+			"single"
+		}, {
+			single_mode,
+			function() return single_mode.value == "random" or single_mode.value == "break" or single_mode.value == "increment" end
 		})
 
 		local single_freeze_on = create_aa_builder_control({
@@ -3087,9 +3131,21 @@ for i, condition_data in ipairs(AntiAimConditions.states) do
 			condition_id,
 			"delay",
 			"left_value"
-		}, ui_groups.other:slider("\nleft_value\f<z>", 0, 16, 0, true, "t", 1, aa_builder_slider_labels.delay)):depend({
+		}, ui_groups.other:slider("\nleft_value (min)\f<z>", 0, 16, 0, true, "t", 1, aa_builder_slider_labels.delay)):depend({
 			type_element,
 			"synced"
+		})
+
+		local left_value_max = create_aa_builder_control({
+			condition_id,
+			"delay",
+			"left_value_max"
+		}, ui_groups.other:slider("\nleft_value (max)\f<z>", 0, 16, 0, true, "t", 1, aa_builder_slider_labels.delay)):depend({
+			type_element,
+			"synced"
+		}, {
+			left_mode,
+			function() return left_mode.value == "random" or left_mode.value == "break" or left_mode.value == "increment" end
 		})
 
 		local left_freeze_on = create_aa_builder_control({
@@ -3138,9 +3194,22 @@ for i, condition_data in ipairs(AntiAimConditions.states) do
 			condition_id,
 			"delay",
 			"right_value"
-		}, ui_groups.other:slider("\nright_value\f<z>", 0, 16, 0, true, "t", 1, aa_builder_slider_labels.delay)):depend({
+		}, ui_groups.other:slider("\nright_value (min)\f<z>", 0, 16, 0, true, "t", 1, aa_builder_slider_labels.delay)):depend({
 			type_element,
 			"synced"
+		})
+
+
+		local right_value_max = create_aa_builder_control({
+			condition_id,
+			"delay",
+			"right_value_max"
+		}, ui_groups.other:slider("\nright_value (max)\f<z>", 0, 16, 0, true, "t", 1, aa_builder_slider_labels.delay)):depend({
+			type_element,
+			"synced"
+		}, {
+			right_mode,
+			function() return right_mode.value == "random" or right_mode.value == "break" or right_mode.value == "increment" end
 		})
 
 		local right_freeze_on = create_aa_builder_control({
@@ -3174,18 +3243,21 @@ for i, condition_data in ipairs(AntiAimConditions.states) do
 			type = type_element,
 			single_mode = single_mode,
 			single_value = single_value,
+			single_value_max = single_value_max,
 			single_freeze_on = single_freeze_on,
 			single_freeze_chance = single_freeze_chance,
 			single_freeze_ticks = single_freeze_ticks,
 			left_label = left_label,
 			left_mode = left_mode,
 			left_value = left_value,
+			left_value_max = left_value_max,
 			left_freeze_on = left_freeze_on,
 			left_freeze_chance = left_freeze_chance,
 			left_freeze_ticks = left_freeze_ticks,
 			right_label = right_label,
 			right_mode = right_mode,
 			right_value = right_value,
+			right_value_max = right_value_max,
 			right_freeze_on = right_freeze_on,
 			right_freeze_chance = right_freeze_chance,
 			right_freeze_ticks = right_freeze_ticks
@@ -4670,6 +4742,7 @@ local aa_logic_modules = {
 				local rand_mode = misc_settings.mode or "default"
 				local range = misc_settings.range or 25
 				local speed = misc_settings.speed or 10
+				local step = misc_settings.step or 0
 
 				if speed == 0 then
 					if not self.rand_speed or globals.tickcount() >= (self.next_speed_change or 0) then
@@ -4683,14 +4756,24 @@ local aa_logic_modules = {
 				if rand_mode == "default" then
 					local tick_interval = math.max(1, speed)
 					if not self.rand_tick or globals.tickcount() >= self.rand_tick then
-						self.rand_val = client.random_int(-range, range)
+						if step > 0 then
+							local steps_count = math.floor(range / step)
+							self.rand_val = client.random_int(-steps_count, steps_count) * step
+						else
+							self.rand_val = client.random_int(-range, range)
+						end
 						self.rand_tick = globals.tickcount() + tick_interval
 					end
 					offset_single = self.rand_val or 0
 				elseif rand_mode == "flick" then
 					local base_interval = math.max(1, speed)
 					if not self.flick_tick or globals.tickcount() > self.flick_tick then
-						self.flick_val = client.random_int(-range, range)
+						if step > 0 then
+							local steps_count = math.floor(range / step)
+							self.flick_val = client.random_int(-steps_count, steps_count) * step
+						else
+							self.flick_val = client.random_int(-range, range)
+						end
 						self.flick_tick = globals.tickcount() + client.random_int(base_interval, base_interval * 2)
 						self.flick_duration = globals.tickcount() + 1
 					end
@@ -4699,7 +4782,12 @@ local aa_logic_modules = {
 					local base_interval = math.max(1, speed)
 					if not self.sway_tick or globals.tickcount() > self.sway_tick then
 						self.sway_start = self.sway_current or 0
-						self.sway_target = client.random_int(-range, range)
+						if step > 0 then
+							local steps_count = math.floor(range / step)
+							self.sway_target = client.random_int(-steps_count, steps_count) * step
+						else
+							self.sway_target = client.random_int(-range, range)
+						end
 						self.sway_start_tick = globals.tickcount()
 						self.sway_duration = client.random_int(base_interval * 2, base_interval * 4)
 						self.sway_hold = client.random_int(base_interval, base_interval * 3)
@@ -4723,7 +4811,7 @@ local aa_logic_modules = {
 
 			if run_synced then
 				local state = self
-				local mode_s, range_s, speed_s
+				local mode_s, range_s, speed_s, step_s
 
 				if not aa_state.switch then
 					if not self.left_state then self.left_state = {} end
@@ -4731,12 +4819,14 @@ local aa_logic_modules = {
 					mode_s = misc_settings.mode_l or "default"
 					range_s = misc_settings.range_l or 25
 					speed_s = misc_settings.speed_l or 10
+					step_s = misc_settings.step_l or 0
 				else
 					if not self.right_state then self.right_state = {} end
 					state = self.right_state
 					mode_s = misc_settings.mode_r or "default"
 					range_s = misc_settings.range_r or 25
 					speed_s = misc_settings.speed_r or 10
+					step_s = misc_settings.step_r or 0
 				end
 
 				if speed_s == 0 then
@@ -4751,14 +4841,24 @@ local aa_logic_modules = {
 				if mode_s == "default" then
 					local tick_interval = math.max(1, speed_s)
 					if not state.rand_tick or globals.tickcount() >= state.rand_tick then
-						state.rand_val = client.random_int(-range_s, range_s)
+						if step_s > 0 then
+							local steps_count = math.floor(range_s / step_s)
+							state.rand_val = client.random_int(-steps_count, steps_count) * step_s
+						else
+							state.rand_val = client.random_int(-range_s, range_s)
+						end
 						state.rand_tick = globals.tickcount() + tick_interval
 					end
 					offset_side = state.rand_val or 0
 				elseif mode_s == "flick" then
 					local base_interval = math.max(1, speed_s)
 					if not state.flick_tick or globals.tickcount() > state.flick_tick then
-						state.flick_val = client.random_int(-range_s, range_s)
+						if step_s > 0 then
+							local steps_count = math.floor(range_s / step_s)
+							state.flick_val = client.random_int(-steps_count, steps_count) * step_s
+						else
+							state.flick_val = client.random_int(-range_s, range_s)
+						end
 						state.flick_tick = globals.tickcount() + client.random_int(base_interval, base_interval * 2)
 						state.flick_duration = globals.tickcount() + 1
 					end
@@ -4767,7 +4867,12 @@ local aa_logic_modules = {
 					local base_interval = math.max(1, speed_s)
 					if not state.sway_tick or globals.tickcount() > state.sway_tick then
 						state.sway_start = state.sway_current or 0
-						state.sway_target = client.random_int(-range_s, range_s)
+						if step_s > 0 then
+							local steps_count = math.floor(range_s / step_s)
+							state.sway_target = client.random_int(-steps_count, steps_count) * step_s
+						else
+							state.sway_target = client.random_int(-range_s, range_s)
+						end
 						state.sway_start_tick = globals.tickcount()
 						state.sway_duration = client.random_int(base_interval * 2, base_interval * 4)
 						state.sway_hold = client.random_int(base_interval, base_interval * 3)
@@ -4871,75 +4976,44 @@ local aa_logic_modules = {
 			end
 		},
 		once = {},
-		get_adaptive_choke_depth = function(self)
-			local lc_left = LocalPawn.exploit.lc_left or 0
-			local latency = client.latency() or 0
-			local latency_ticks = math.floor(latency / globals.tickinterval() + 0.5)
-
-			local min_reserve = 2
-
-			if latency_ticks > 3 then
-				min_reserve = min_reserve + 1
-			end
-
-			if LocalPawn.exploit.defensive_active then
-				min_reserve = min_reserve + 1
-			end
-
-			return min_reserve
-		end,
 		snap = function(self)
 			local snap_settings = active_aa_settings.snap
 
-			local min_reserve = self:get_adaptive_choke_depth()
-
 			local can_snap_now = snap_settings ~= nil
 				and LocalPawn.exploit.active
-				and (LocalPawn.exploit.lc_left > ((frame_flags.force_implicit and 1 or 0) + min_reserve - 2) or LocalPawn.exploit.defensive_active)
+				and LocalPawn.exploit.lc_left > (frame_flags.force_implicit and 1 or 0)
 				and not aa_state.use_aa
 				and not aa_state.manual_yaw
 
-			if self.might_cross and not aa_state.send_packet and not LocalPawn.exploit.active and not LocalPawn.exploit.defensive_active and LocalPawn.exploit.lc_left > 0 then
+			if self.might_cross and not aa_state.send_packet and not LocalPawn.exploit.active and LocalPawn.exploit.lc_left > 0 then
 				frame_flags.force_send, frame_flags.no_modifier, frame_flags.no_offset = true, true, true
 				self.might_cross = false
 			end
 
 			if can_snap_now then
-				local current_cmd = cmd.command_number
-				if current_cmd ~= self.last_snap_cmd then
-					self.last_snap_cmd = current_cmd
-					self.ticks = self.ticks + 1
-
-					local delay_raw = snap_settings.y and snap_settings.y.delay
-					local delay_val = tonumber(delay_raw) or 0
-					if delay_val <= 1 then
-						delay_val = 1
-					end
-					if self.ticks % (delay_val + 1) == 0 then
-						self.defensive_switch = not self.defensive_switch
-					end
-				end
+				self.ticks = self.ticks + 1
 				can_snap_now = snap_settings.time >= self.ticks
 			else
 				self.ticks = 0
-				self.defensive_switch = false
-				self.last_snap_cmd = nil
 			end
 
 			aa_state.will_break_lc = LocalPawn.exploit.active and (LocalPawn.exploit.active == ScriptData.exploit.OS or cmd.force_defensive)
 
 			if can_snap_now then
-				if (snap_settings.x.on or snap_settings.y.on) and (not aa_state.snapping or LocalPawn.exploit.lc_left <= min_reserve or LocalPawn.exploit.defensive_active) then
+				if (snap_settings.x.on or snap_settings.y.on) and (not aa_state.snapping or LocalPawn.exploit.lc_left <= 2) then
 					frame_flags.force_send = true
 				end
 
 				aa_state.snapping, final_angles.snap = true, {}
 				self.once.apex = self.once.apex or LocalPawn.exploit.lc_left
+				self.once.delayed = self.once.delayed or 0
 
-				if aa_state.send_packet or LocalPawn.exploit.defensive_active then
+				if self.once.delayed >= snap_settings.y.delay + 1 then
 					self.once.switch = not self.once.switch
-				else
-					self.once.switch = true
+					self.defensive_switch = not self.defensive_switch
+					self.once.delayed = 0
+				elseif aa_state.send_packet then
+					self.once.delayed = self.once.delayed + 1
 				end
 
 				if snap_settings.x.on then
@@ -4955,15 +5029,11 @@ local aa_logic_modules = {
 					local yaw_result, force_send_flag = self.yaw[snap_settings.y.mode](self, snap_settings.y)
 
 					if yaw_result then
-						if self.once.switch then
-							final_angles.snap[2] = final_angles.yaw + yaw_result
+						final_angles.snap[2] = final_angles.yaw + yaw_result
 
-							if snap_settings.sd then
-								final_angles.des = yaw_result < 180 and 60 or -60
-								self.prev_des = final_angles.des
-							end
-						else
-							final_angles.snap[2] = final_angles.yaw
+						if snap_settings.sd then
+							final_angles.des = yaw_result < 180 and 60 or -60
+							self.prev_des = final_angles.des
 						end
 
 						self.might_cross = true
@@ -4975,14 +5045,11 @@ local aa_logic_modules = {
 				end
 			elseif aa_state.snapping then
 				self.counter = self.counter + 1
-				aa_state.snapping = false
-				final_angles.snap = nil
+				aa_state.snapping, final_angles.snap = false
+
 				table.clear(self.once)
+
 				self.might_cross = false
-				
-				if not aa_state.send_packet then
-					frame_flags.force_send = true
-				end
 			end
 		end,
 		lc = function(self)
@@ -4990,51 +5057,14 @@ local aa_logic_modules = {
 
 			return cmd.weaponselect ~= 0 and lc_break_triggers:get("Weapon change") or not LocalPawn.on_ground and lc_break_triggers:get("Jumping") or LocalPawn.crouching and LocalPawn.on_ground and lc_break_triggers:get("Crouching")
 		end,
-		get_tickbase_phase = function(self)
-			local lc_left = LocalPawn.exploit.lc_left or 0
-			if lc_left <= 1 then
-				return "flush"
-			end
-			return "choke"
-		end,
-		check_simtime_rewind = function(self)
-			local sim_time = entity.get_prop(LocalPawn.self, "m_flSimulationTime")
-			if not sim_time then return false end
-
-			local tick_interval = globals.tickinterval()
-			local current_sim_tick = math.floor(sim_time / tick_interval + 0.5)
-
-			if not self.last_sim_tick then
-				self.last_sim_tick = current_sim_tick
-				return false
-			end
-
-			local delta = current_sim_tick - self.last_sim_tick
-			self.last_sim_tick = current_sim_tick
-
-			return delta < 0 or delta > 16
-		end,
 		work = function(self)
 			if self:lc() then
 				cmd.force_defensive = true
 			end
 
-			local phase = self:get_tickbase_phase()
-			local simtime_rewound = self:check_simtime_rewind()
-
-			if simtime_rewound and aa_state.snapping then
-				frame_flags.force_send = true
-				frame_flags.no_modifier = true
-				frame_flags.no_offset = true
-			end
-
-			if (phase == "flush" or LocalPawn.exploit.defensive_active) and aa_state.snapping then
-				frame_flags.force_send = true
-			end
-
 			self:snap()
 		end
-	},
+		},
 		head = {
 			smart = function()
 				local threat_weapon = entity.get_player_weapon(LocalPawn.threat)
@@ -5521,6 +5551,9 @@ local function handle_aa_delay(delay_settings)
 			if type_val == "single" then
 				local mode = string.lower(delay_settings.single_mode or "static")
 				local value = delay_settings.single_value or 0
+				local value_max = delay_settings.single_value_max or 0
+				if value_max < value then value_max = value end
+
 				if mode == "fluctuate" then
 					local state = fluctuate_states.single_delay
 					if state.val2 == nil or state.remaining <= 0 then
@@ -5532,18 +5565,18 @@ local function handle_aa_delay(delay_settings)
 					target_delay_ticks = final_val <= 0 and 1 or final_val
 					state.phase = not state.phase
 					state.remaining = state.remaining - 1
-				elseif value <= 0 then
+				elseif value <= 0 and value_max <= 0 then
 					target_delay_ticks = 1
 				elseif mode == "static" then
 					target_delay_ticks = value
 				elseif mode == "random" then
-					target_delay_ticks = client.random_int(1, value)
+					target_delay_ticks = client.random_int(value, value_max)
 				elseif mode == "break" then
-					target_delay_ticks = (client.random_int(1, 100) > 50) and math.clamp(math.floor((math.sin(globals.tickcount() * 0.15) * 0.5 + 0.5) * (value - 1) + 1.5) + client.random_int(-1, 1), 1, value) or 1
+					target_delay_ticks = (client.random_int(1, 100) > 50) and math.clamp(math.floor((math.sin(globals.tickcount() * 0.15) * 0.5 + 0.5) * (value_max - 1) + 1.5) + client.random_int(-1, 1), value, value_max) or 1
 				elseif mode == "increment" then
-					local max_val = math.max(1, value)
-					target_delay_ticks = (single_increment_counter % max_val) + 1
-					single_increment_counter = (single_increment_counter + 1) % max_val
+					local range = math.max(1, value_max - value + 1)
+					target_delay_ticks = (single_increment_counter % range) + value
+					single_increment_counter = (single_increment_counter + 1) % range
 				end
 
 				local freeze_on = delay_settings.single_freeze_on
@@ -5581,6 +5614,9 @@ local function handle_aa_delay(delay_settings)
 				if not aa_state.switch then 
 					local left_mode = string.lower(delay_settings.left_mode or "static")
 					local left_value = delay_settings.left_value or 0
+					local left_value_max = delay_settings.left_value_max or 0
+					if left_value_max < left_value then left_value_max = left_value end
+
 					if left_mode == "fluctuate" then
 						local state = fluctuate_states.left_delay
 						if state.val2 == nil or state.remaining <= 0 then
@@ -5592,18 +5628,18 @@ local function handle_aa_delay(delay_settings)
 						target_delay_ticks = final_val <= 0 and 1 or final_val
 						state.phase = not state.phase
 						state.remaining = state.remaining - 1
-					elseif left_value <= 0 then
+					elseif left_value <= 0 and left_value_max <= 0 then
 						target_delay_ticks = 1
 					elseif left_mode == "static" then
 						target_delay_ticks = left_value
 					elseif left_mode == "random" then
-						target_delay_ticks = client.random_int(1, left_value)
+						target_delay_ticks = client.random_int(left_value, left_value_max)
 					elseif left_mode == "break" then
-						target_delay_ticks = (client.random_int(1, 100) > 50) and math.clamp(math.floor((math.sin(globals.tickcount() * 0.15) * 0.5 + 0.5) * (left_value - 1) + 1.5) + client.random_int(-1, 1), 1, left_value) or 1
+						target_delay_ticks = (client.random_int(1, 100) > 50) and math.clamp(math.floor((math.sin(globals.tickcount() * 0.15) * 0.5 + 0.5) * (left_value_max - 1) + 1.5) + client.random_int(-1, 1), left_value, left_value_max) or 1
 					elseif left_mode == "increment" then
-						local max_val = math.max(1, left_value)
-						target_delay_ticks = (left_increment_counter % max_val) + 1
-						left_increment_counter = (left_increment_counter + 1) % max_val
+						local range = math.max(1, left_value_max - left_value + 1)
+						target_delay_ticks = (left_increment_counter % range) + left_value
+						left_increment_counter = (left_increment_counter + 1) % range
 					end
 
 					local left_freeze_on = delay_settings.left_freeze_on
@@ -5640,6 +5676,9 @@ local function handle_aa_delay(delay_settings)
 				else 
 					local right_mode = string.lower(delay_settings.right_mode or "static")
 					local right_value = delay_settings.right_value or 0
+					local right_value_max = delay_settings.right_value_max or 0
+					if right_value_max < right_value then right_value_max = right_value end
+
 					if right_mode == "fluctuate" then
 						local state = fluctuate_states.right_delay
 						if state.val2 == nil or state.remaining <= 0 then
@@ -5651,18 +5690,18 @@ local function handle_aa_delay(delay_settings)
 						target_delay_ticks = final_val <= 0 and 1 or final_val
 						state.phase = not state.phase
 						state.remaining = state.remaining - 1
-					elseif right_value <= 0 then
+					elseif right_value <= 0 and right_value_max <= 0 then
 						target_delay_ticks = 1
 					elseif right_mode == "static" then
 						target_delay_ticks = right_value
 					elseif right_mode == "random" then
-						target_delay_ticks = client.random_int(1, right_value)
+						target_delay_ticks = client.random_int(right_value, right_value_max)
 					elseif right_mode == "break" then
-						target_delay_ticks = (client.random_int(1, 100) > 50) and math.clamp(math.floor((math.sin(globals.tickcount() * 0.15) * 0.5 + 0.5) * (right_value - 1) + 1.5) + client.random_int(-1, 1), 1, right_value) or 1
+						target_delay_ticks = (client.random_int(1, 100) > 50) and math.clamp(math.floor((math.sin(globals.tickcount() * 0.15) * 0.5 + 0.5) * (right_value_max - 1) + 1.5) + client.random_int(-1, 1), right_value, right_value_max) or 1
 					elseif right_mode == "increment" then
-						local max_val = math.max(1, right_value)
-						target_delay_ticks = (right_increment_counter % max_val) + 1
-						right_increment_counter = (right_increment_counter + 1) % max_val
+						local range = math.max(1, right_value_max - right_value + 1)
+						target_delay_ticks = (right_increment_counter % range) + right_value
+						right_increment_counter = (right_increment_counter + 1) % range
 					end
 
 					local right_freeze_on = delay_settings.right_freeze_on
@@ -6167,19 +6206,42 @@ generate_quadrant_offsets = function(quad, max_weight, current_state, desync_tar
 	local target_r = (desync_target == -1) and min_r or max_r
 
 	local yaw, desync
+	local force_side = 0
+
+	if ab_state.last_miss_dist and ab_state.last_miss_dist > 1 then
+		local last_side = ab_state.last_miss_side or 0
+		local last_dist = ab_state.last_miss_dist
+		local prev_side = ab_state.prev_miss_side
+		local prev_dist = ab_state.prev_miss_dist
+
+		if prev_dist and prev_side == last_side then
+			if last_dist < prev_dist then
+				force_side = last_side == 1 and -1 or 1
+				yaw_mult = math.clamp(prev_dist / 8, 1.0, 2.0)
+			else
+				force_side = last_side
+				yaw_mult = math.clamp(last_dist / 8, 1.0, 2.0)
+			end
+		else
+			force_side = last_side
+			yaw_mult = math.clamp(last_dist / 6, 1.0, 1.5)
+		end
+	end
+
 	if quad == "q1" then
-		yaw = client.random_float(0, max_weight) * yaw_mult
+		yaw = (force_side <= 0 and client.random_float(0, max_weight) or client.random_float(-max_weight, 0)) * yaw_mult
 		desync = client.random_float(target_l * 0.75, target_l) / 58
 	elseif quad == "q2" then
-		yaw = client.random_float(0, max_weight) * yaw_mult
+		yaw = (force_side <= 0 and client.random_float(0, max_weight) or client.random_float(-max_weight, 0)) * yaw_mult
 		desync = -client.random_float(target_r * 0.75, target_r) / 58
 	elseif quad == "q3" then
-		yaw = client.random_float(-max_weight, 0) * yaw_mult
+		yaw = (force_side >= 0 and client.random_float(0, max_weight) or client.random_float(-max_weight, 0)) * yaw_mult
 		desync = client.random_float(target_l * 0.75, target_l) / 58
 	else 
-		yaw = client.random_float(-max_weight, 0) * yaw_mult
+		yaw = (force_side >= 0 and client.random_float(0, max_weight) or client.random_float(-max_weight, 0)) * yaw_mult
 		desync = -client.random_float(target_r * 0.75, target_r) / 58
 	end
+
 	return yaw, desync
 end
 
@@ -6243,6 +6305,11 @@ function trigger_anti_bruteforce(reason, attacker)
 		ab_state.desync_shift_right = common_desync
 	end
 	ab_state.active = true
+
+	ab_state.prev_miss_side = nil
+	ab_state.prev_miss_dist = nil
+	ab_state.last_miss_side = nil
+	ab_state.last_miss_dist = nil
 
 	if timer_val > 0 then
 		ab_state.timer_end = globals.realtime() + timer_val * 0.1
@@ -6467,8 +6534,10 @@ eventLogger.events = {
 				
 				local hitg = damage_self.hitgroup
 				local penalty = 2
-				if hitg == 1 or (hitg >= 4 and hitg <= 7) then 
-					penalty = 4
+				if hitg == 1 then
+					penalty = 3 
+				elseif hitg >= 4 and hitg <= 7 then 
+					penalty = 4 
 				end
 				
 				update_quadrant_scores(name, current_state, q_left, q_right, -penalty * 2)
