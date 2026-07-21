@@ -4261,7 +4261,6 @@ local function select_defensive_snap_profile()
 
 	local snap_builder_profile
 	local profile_index = 0
-	local current_snap_condition = ScriptData.snaps.default
 
 	if profile_index == 0 then
 		snap_builder_profile = Anti_Aim.snap.custom
@@ -4269,36 +4268,31 @@ local function select_defensive_snap_profile()
 		snap_builder_profile = Anti_Aim.snap[profile_index]
 	end
 
-	if snap_builder_profile.airc.on ~= "Default" and LocalPawn.jumping and LocalPawn.crouching then
-		current_snap_condition = ScriptData.snaps.airc
-	elseif snap_builder_profile.air.on ~= "Default" and LocalPawn.jumping then
-		current_snap_condition = ScriptData.snaps.air
-	elseif snap_builder_profile.sneak.on ~= "Default" and LocalPawn.on_ground and LocalPawn.crouching and LocalPawn.velocity > 5 then
-		current_snap_condition = ScriptData.snaps.sneak
-	elseif snap_builder_profile.crouch.on ~= "Default" and LocalPawn.on_ground and LocalPawn.crouching then
-		current_snap_condition = ScriptData.snaps.crouch
-	elseif snap_builder_profile.peek.on ~= "Default" and LocalPawn.on_ground and LocalPawn.peeking then
-		current_snap_condition = ScriptData.snaps.peek
-	elseif snap_builder_profile.walk.on ~= "Default" and LocalPawn.on_ground and not LocalPawn.crouching and LocalPawn.walking then
-		current_snap_condition = ScriptData.snaps.walk
-	elseif snap_builder_profile.run.on ~= "Default" and LocalPawn.on_ground and not LocalPawn.crouching and LocalPawn.velocity > 5 then
-		current_snap_condition = ScriptData.snaps.run
-	elseif snap_builder_profile.stand.on ~= "Default" and LocalPawn.on_ground and not LocalPawn.crouching and LocalPawn.velocity <= 5 then
-		current_snap_condition = ScriptData.snaps.stand
+	local current_snap_condition = ScriptData.snaps.default
+
+	if LocalPawn.jumping then
+		current_snap_condition = LocalPawn.crouching and ScriptData.snaps.airc or ScriptData.snaps.air
+	elseif LocalPawn.on_ground then
+		if LocalPawn.crouching then
+			current_snap_condition = LocalPawn.velocity > 5 and ScriptData.snaps.sneak or ScriptData.snaps.crouch
+		elseif LocalPawn.peeking and snap_builder_profile.peek.on ~= "Default" then
+			current_snap_condition = ScriptData.snaps.peek
+		elseif LocalPawn.velocity > 5 then
+			current_snap_condition = LocalPawn.walking and ScriptData.snaps.walk or ScriptData.snaps.run
+		else
+			current_snap_condition = ScriptData.snaps.stand
+		end
 	end
 
 	local selected_snap_settings = snap_builder_profile[AntiAimConditions.snaps[current_snap_condition][1]]
 
-	if selected_snap_settings.on == "Off" then
-		return
+	if selected_snap_settings and selected_snap_settings.on == "Default" then
+		current_snap_condition = ScriptData.snaps.default
+		selected_snap_settings = snap_builder_profile[AntiAimConditions.snaps[current_snap_condition][1]]
 	end
 
-	current_snap_condition = selected_snap_settings.on == "Custom" and current_snap_condition or ScriptData.snaps.default
-
-	local final_snap_settings = snap_builder_profile[AntiAimConditions.snaps[current_snap_condition][1]]
-
-	if final_snap_settings and final_snap_settings.on ~= "Off" then
-		active_aa_settings.snap = final_snap_settings
+	if selected_snap_settings and selected_snap_settings.on ~= "Off" then
+		active_aa_settings.snap = selected_snap_settings
 	end
 end
 
