@@ -2674,6 +2674,9 @@ gui = {
 			ui_helpers.header(ui_groups.other, "Misc"),
 			triggers = ui_groups.other:multiselect("LC break triggers", {
 				"Jumping",
+				"Running",
+				"Walking",
+				"Standing",
 				"Crouching",
 				"Weapon change"
 			}),
@@ -5049,7 +5052,12 @@ local aa_logic_modules = {
 		lc = function(self)
 			local lc_break_triggers = gui.antiaim.def.triggers
 
-			return cmd.weaponselect ~= 0 and lc_break_triggers:get("Weapon change") or not LocalPawn.on_ground and lc_break_triggers:get("Jumping") or LocalPawn.crouching and LocalPawn.on_ground and lc_break_triggers:get("Crouching")
+			return cmd.weaponselect ~= 0 and lc_break_triggers:get("Weapon change")
+				or not LocalPawn.on_ground and lc_break_triggers:get("Jumping")
+				or LocalPawn.crouching and LocalPawn.on_ground and lc_break_triggers:get("Crouching")
+				or LocalPawn.on_ground and not LocalPawn.crouching and LocalPawn.velocity <= 5 and lc_break_triggers:get("Standing")
+				or LocalPawn.on_ground and not LocalPawn.crouching and LocalPawn.velocity > 5 and LocalPawn.walking and lc_break_triggers:get("Walking")
+				or LocalPawn.on_ground and not LocalPawn.crouching and LocalPawn.velocity > 5 and not LocalPawn.walking and lc_break_triggers:get("Running")
 		end,
 		work = function(self)
 			if self:lc() then
